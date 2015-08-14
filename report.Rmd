@@ -1,0 +1,139 @@
+---
+title: "Practical Machine Learning"
+author: "Moreno Riccardi"
+output: html_document
+---
+
+## Introduction
+
+The goal of your project is to predict the manner in which they did the exercise, the "classe" variable in the training set.
+You may use any of the other variables to predict with. 
+You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+You can find more info about the original project here:
+
+
+http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf
+
+## Data
+
+First of all load train and test set.
+    
+```{r loaddata, cache=TRUE}
+train <- read.csv("data/pml-training.csv", na.strings = c("", "NA", "#DIV/0!"))
+test <- read.csv("data/pml-testing.csv", na.strings = c("", "NA", "#DIV/0!"))
+```
+
+Training data are composed by `r dim(train)[1]` observation over `r dim(train)[2]` features, and the classe output distribution is:
+```{r classedistr}
+table(train$classe)
+```
+
+## Preprocessing
+
+### Exploratory analysis
+
+Looking directly to csv file, we should see that there are many field with:
+
+* empty value,
+* NA,
+* \#DIV/0! value,
+
+so I've decided to replace them with NA during the import process.
+Then we can see that there are some descriptive field:
+
+* "X", 
+* "user_name", 
+* "raw_timestamp_part_1", 
+* "raw_timestamp_part_2", 
+* "cvtd_timestamp", 
+* "new_window", 
+* "num_window"
+
+that we should exclude from our feature.
+
+Moreover we should take care of feature that contains mainly NAs. 
+For example we take a look to features that contain more than 90% of NAs.
+
+```{r warning=TRUE}
+na_count <-sapply(train, function(y) sum(length(which(is.na(y)))))
+sum((na_count/dim(train)[1])>0.9)
+```
+
+### Partition training set
+
+Let's split our training data in a training and validation set.
+
+```{r warning=FALSE, message=FALSE}
+library(caret)
+```
+
+```{r partition, cache=TRUE}
+set.seed(444444)
+trainset <- createDataPartition(train$classe, p = 0.8, list = FALSE)
+Training <- train[trainset, ]
+Validation <- train[-trainset, ]
+```
+
+### Feature selection
+
+First of all we have to remove descriptive fields.
+
+```{r removedescr}
+descriptivecol <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", 
+    "cvtd_timestamp", "new_window", "num_window")
+Training <- Training[, !names(Training) %in% descriptivecol]
+```
+
+And then, as stated before we should manage feature with many NAs (more than 90% of the observation).
+
+```{r emptyfield}
+Training <- Training[, !names(Training) %in% names(na_count[(na_count/dim(Training)[1])>0.9])]
+```
+
+Now we can can check if there are other zero variance feature that we should remove
+
+```{r zerotol}
+nzvcol <- nearZeroVar(Training)
+nzvcol
+```
+
+There aren't other feature to remove, so we have a training set with `r dim(Training)[2]` features.
+
+### Model Train
+
+I have decided to use Random Forest as our model, as implemented in the randomForest package by Breiman's random forest algorithm for classification and regression.
+
+```{r warning=FALSE, message=FALSE, cache=TRUE}
+library(randomForest)
+modelFit <- randomForest(classe ~ ., data = Training, importance = TRUE, ntrees = 10)
+```
+
+### Model Validation
+
+Now let's test our model performance on training set itself.
+
+```{r warning=FALSE, message=FALSE, cache=TRUE}
+ptraining <- predict(modelFit, Training)
+print(confusionMatrix(ptraining, Training$classe))
+```
+
+Model performs perfectly on training set itself, but we need to cross validate it against our validation set.
+
+### Out of sample validation
+
+```{r warning=FALSE, message=FALSE, cache=TRUE}
+pvalidation <- predict(modelFit, Validation)
+print(confusionMatrix(pvalidation, Validation$classe))
+```
+
+Overall accuracy (99,75%) of the model is nearly perfect, so it performs very well on validation set too.
+
+## Test set Prediction
+
+Now let's predict "classe" outcome of our test set, so we can submit them on Coursera.
+
+```{r prediction, warning=FALSE, message=FALSE, cache=TRUE}
+ptest <- predict(modelFit, test)
+ptest
+```
